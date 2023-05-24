@@ -106,3 +106,6 @@ variable "internet_gateway_name" {
 variable "db_availability_zone" {
   type = string
 }
+variable "subnet_cidr_block_2" {
+  type = string
+}

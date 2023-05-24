@@ -19,7 +19,7 @@ resource "aws_subnet" "aws_lab_subnet_1" {
 }
 resource "aws_subnet" "aws_lab_subnet_2" {
   vpc_id     = aws_vpc.aws_lab_vpc.id
-  cidr_block = var.subnet_cidr_block
+  cidr_block = var.subnet_cidr_block_2
 }
 
 # Create an internet gateway and attach it to the VPC

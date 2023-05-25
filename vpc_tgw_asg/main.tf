@@ -1,7 +1,8 @@
 
 # Create a VPC
 resource "aws_vpc" "aws_lab_vpc" {
-  cidr_block = "10.0.0.0/16" # Replace with your desired VPC CIDR block
+  cidr_block = "10.0.0.0/16"
+
 
   tags = {
     Name = var.vpc_name
@@ -10,16 +11,17 @@ resource "aws_vpc" "aws_lab_vpc" {
 
 # Create a subnet within the VPC
 resource "aws_subnet" "aws_lab_subnet_1" {
-  vpc_id     = aws_vpc.aws_lab_vpc.id
-  cidr_block = var.subnet_cidr_block
-
+  vpc_id            = aws_vpc.aws_lab_vpc.id
+  cidr_block        = var.subnet_cidr_block
+  availability_zone = var.availability_zone
   tags = {
     Name = var.subnet_name
   }
 }
 resource "aws_subnet" "aws_lab_subnet_2" {
-  vpc_id     = aws_vpc.aws_lab_vpc.id
-  cidr_block = var.subnet_cidr_block_2
+  vpc_id            = aws_vpc.aws_lab_vpc.id
+  cidr_block        = var.subnet_cidr_block_2
+  availability_zone = var.db_availability_zone
 }
 
 # Create an internet gateway and attach it to the VPC
@@ -183,6 +185,8 @@ resource "aws_db_instance" "aws_lab_db_instance" {
   password             = var.aws_db_instance_password
   db_subnet_group_name = aws_db_subnet_group.aws_lab_db_subnet_group.name
   availability_zone    = var.db_availability_zone
+  skip_final_snapshot  = true # don't snapshot when instance is destroyed (so we are able to destroy it)
+
 }
 
 resource "aws_db_subnet_group" "aws_lab_db_subnet_group" {

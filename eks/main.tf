@@ -2,13 +2,14 @@
 provider "aws" {
   access_key = var.access_key
   secret_key = var.secret_key
-  region = var.region
+  region     = var.region
 }
 
 data "aws_availability_zones" "available" {}
 
 locals {
   cluster_name = "tekouin_lab-eks-${random_string.suffix.result}"
+  azs          = slice(data.aws_availability_zones.available.names, 0, 3)
 }
 
 resource "random_string" "suffix" {
@@ -53,10 +54,100 @@ module "eks" {
   vpc_id                         = module.vpc.vpc_id
   subnet_ids                     = module.vpc.private_subnets
   cluster_endpoint_public_access = true
+  cluster_addons = {
+    kube-proxy = {
+      most_recent = true
+
+    }
+    vpc-cni = {
+      most_recent = true
+
+    }
+    coredns = {
+      most_recent = true
+
+      configuration_values = jsonencode({
+        computeType = "Fargate"
+      })
+    }
+  }
 
   eks_managed_node_group_defaults = {
     ami_type = "AL2_x86_64"
 
+  }
+  fargate_profiles = merge(
+    {
+      example = {
+        name = "backend"
+        selectors = [
+          {
+            namespace = "backend"
+            labels = {
+              Application = "backend"
+            }
+          },
+          {
+            namespace = "app-*"
+            labels = {
+              Application = "app-wildcard"
+            }
+          }
+        ]
+        # Using specific subnets instead of the subnets supplied for the cluster itself
+        subnet_ids = [module.vpc.private_subnets[1]]
+        tags = {
+          Owner = "secondary"
+        }
+        timeouts = {
+          create = "20m"
+          delete = "20m"
+        }
+      }
+    },
+    { for i in range(3) :
+      "kube-system-${element(split("-", local.azs[i]), 2)}" => {
+        selectors = [
+          { namespace = "kube-system" }
+        ]
+        # We want to create a profile per AZ for high availability
+        subnet_ids = [element(module.vpc.private_subnets, i)]
+      }
+    }
+  )
+  self_managed_node_group_defaults = {
+    instance_type                          = "m6i.large"
+    update_launch_template_default_version = true
+    iam_role_additional_policies = {
+      AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    }
+  }
+  self_managed_node_groups = {
+    one = {
+      name         = "mixed-1"
+      max_size     = 5
+      desired_size = 2
+
+      use_mixed_instances_policy = true
+      mixed_instances_policy = {
+        instances_distribution = {
+          on_demand_base_capacity                  = 0
+          on_demand_percentage_above_base_capacity = 10
+          spot_allocation_strategy                 = "capacity-optimized"
+        }
+
+        override = [
+          {
+            instance_type     = "m5.large"
+            weighted_capacity = "1"
+          },
+          {
+            instance_type     = "m6i.large"
+            weighted_capacity = "2"
+          },
+        ]
+      }
+    }
   }
 
   eks_managed_node_groups = {
@@ -80,6 +171,11 @@ module "eks" {
       desired_size = 1
     }
   }
+
+  tags = {
+    Environment = "dev"
+    Terraform   = "true"
+  }
 }
 
 
@@ -101,7 +197,6 @@ module "irsa-ebs-csi" {
 resource "aws_eks_addon" "ebs-csi" {
   cluster_name             = module.eks.cluster_name
   addon_name               = "aws-ebs-csi-driver"
-  addon_version            = "v1.8.7-eksbuild.3"
   service_account_role_arn = module.irsa-ebs-csi.iam_role_arn
   tags = {
     "eks_addon" = "ebs-csi"
